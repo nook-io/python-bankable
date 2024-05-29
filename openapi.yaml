@@ -1,0 +1,3714 @@
+openapi: 3.1.0
+info:
+  version: b6bf82e
+  title: Credit
+  description: |-
+    # Introduction
+    Description of Bankable Credit RESTful API.
+    Current limitations:
+    - The Credit service does not support [cross origin headers](https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS) for security reasons. It is not possible to use Swagger UI and make API calls directly from the browser.
+    - Modification API requests (`POST`, `DELETE`) require additional security scopes granted under the service agreement.
+    - Consider the Bankable limitations for API calls that depend on the contract agreement.
+  termsOfService: https://bnkbl.io/service-partner-terms-conditions/
+  contact:
+    url: https://bnkbl.io/
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  x-logo:
+    url: https://www.bnkbl.com/wp-content/themes/bankable/assets/img/bankable.png
+servers:
+  - url: https://api.bnkbl.io
+    description: Main server
+security:
+  - ClientCredentials: []
+tags:
+  - name: Authentication
+    description: |-
+      This section covers the operation that allows you to authenticate with the Bankable Credit API using the OAuth 2.0 client credentials flow. 
+
+      <!-- ReDoc-Inject: <security-definitions> -->
+
+      To get your credentials contact [api@bnkbl.com](api@bnkbl.com).
+  - name: Client Onboarding
+    description: These operations allow you to onboard a new client to Credit services.
+  - name: Client Financials
+    description: These operations allow you to import your clients' financial data into the Credit system.
+  - name: Invoice Finance
+    description: These endpoints allow you to submit and manage invoices for the Invoice Finance product.
+  - name: Credit
+    description: These endpoints allow you to request and manage credits for the Credit product.
+  - name: Payables Finance
+    description: These endpoints allow you to submit and manage payables for the Payables Finance product.
+paths:
+  /oauth/token:
+    post:
+      operationId: GetToken
+      summary: Get Authentication Token
+      security: []
+      description: |-
+        This is the OAuth 2.0 grant that server processes use to access an API.
+        Use this endpoint to directly request an Access Token by using the Client's credentials (a Client ID and a Client Secret).
+      tags:
+        - Authentication
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - client_id
+                - client_secret
+              properties:
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: Authentication token.
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+                  token_type:
+                    type: string
+                    description: The type of the authentication token.
+                    example: Bearer
+                  expires_in:
+                    type: integer
+                    description: The lifetime (in seconds) of the token.
+                    example: 86400
+        '401':
+          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+  /client:
+    post:
+      tags:
+        - Client Onboarding
+      summary: Create Client
+      description: Use this operation to create a client.
+      operationId: createClient
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/crn'
+                - type: object
+                  properties:
+                    product:
+                      $ref: '#/components/schemas/products'
+                - type: object
+                  properties:
+                    contact:
+                      $ref: '#/components/schemas/contact'
+              required:
+                - product
+                - contact
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                    format: uuid
+                    description: Client ID provided by Bankable.
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Company not found.
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Already created client for product.
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /client/{client_id}/product/{product}/contract/request:
+    post:
+      tags:
+        - Client Onboarding
+      summary: Request Contract
+      description: Use this operation to obtain URLs for contract signing.
+      operationId: requestContract
+      parameters:
+        - name: client_id
+          in: path
+          schema:
+            type: string
+            format: uuid
+            description: Unique identifier for the client.
+          required: true
+          example: eed517c8-fce6-425e-96a1-105fc15ad09d
+        - name: product
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/products'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - signers
+              properties:
+                signers:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  description: List of signing parties.
+                  items:
+                    type: object
+                    required:
+                      - email
+                      - first_name
+                      - last_name
+                    properties:
+                      email:
+                        description: Signer email.
+                        type: string
+                        example: john.doe@bnkbl.com
+                      first_name:
+                        description: Signer first name.
+                        type: string
+                        example: John
+                      last_name:
+                        description: Signer last name.
+                        type: string
+                        example: Doe
+                      address:
+                        type: string
+                        description: Address of the signer, mandatory for UK companies.
+                        example: New Broad Street House, 35 New Broad Street, London, United Kingdom, EC2M 1NH
+                      proof_of_address:
+                        type: string
+                        description: Unique identifier of the file returned by the Upload Proof of Address endpoint. Mandatory for companies in the UK.
+                        example: fc46b7de-a9f6-4398-8448-bfe665d25d02
+      responses:
+        '200':
+          description: Contract requested
+          $ref: '#/components/responses/signersList'
+        '400':
+          description: invalid form values
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: client not found
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Contract already requested
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /client/{client_id}/product/{product}/contract/signers/proof-of-address:
+    post:
+      tags:
+        - Client Onboarding
+      summary: Upload Proof of Address
+      description: Use this operation to upload a proof of address file, a requirement for UK company contract signing.
+      operationId: uploadProofOfAddress
+      parameters:
+        - name: client_id
+          in: path
+          schema:
+            type: string
+            format: uuid
+            description: Unique identifier for the client.
+          required: true
+          example: eed517c8-fce6-425e-96a1-105fc15ad09d
+        - name: product
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/products'
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  description: The file to use to proving address.
+                  format: binary
+      responses:
+        '201':
+          description: attachment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment_id:
+                    type: string
+                    format: uuid
+                    description: Id of the attachment
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: client not found
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /client/{client_id}/product/{product}/kyb:
+    post:
+      tags:
+        - Client Onboarding
+      summary: Submit KYB Form
+      description: Use this operation to submit a KYB form for the client onboarding process.
+      operationId: submitKYB
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - annual_revenue
+                - incorporation_date
+                - financing_frequency
+                - financial_institution
+                - income_source
+                - directors
+              properties:
+                annual_revenue:
+                  description: Annual revenue of the company
+                  type: number
+                  format: float
+                  example: 10000
+                incorporation_date:
+                  type: string
+                  description: The incorporation date of the company
+                  format: date
+                  example: '2006-01-02'
+                financial_institution:
+                  type: boolean
+                  description: The company is a financial institution. False is obligatory to be able to onboard. We give out an error if true.
+                income_source:
+                  type: string
+                  description: Source of income.
+                  enum:
+                    - business_activities
+                    - investment_activities
+                    - royalties
+                trading_name:
+                  type: string
+                  description: The trading name of the company if different from the legal name.
+                  example: Bankable
+                industry:
+                  type: string
+                  description: Standard Industrial Classification code.
+                  format: SIC
+                financing_frequency:
+                  type: string
+                  description: The financing frequency.
+                  enum:
+                    - regular
+                    - sporadic
+                    - season
+                financing_needed:
+                  type: number
+                  format: float
+                  description: Amount of financing needed.
+                  example: 100.5
+                comments:
+                  type: string
+                  description: Extra comment.
+                  example: Ipsum deserunt ad ipsum ad commodo.
+                ultimate_beneficial_owners:
+                  type: array
+                  maxItems: 4
+                  description: Array of objects where each object is an owner with at least 25% ownership. 0-4 people.
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Name of the owner.
+                        example: John Doe
+                      nationality:
+                        type: string
+                        example: GB
+                        description: Nationality of the owner.
+                        maxLength: 2
+                        minLength: 2
+                      share:
+                        type: number
+                        format: float
+                        description: Share of the owner.
+                        example: 100
+                      date_of_birth:
+                        type: string
+                        description: Birth data of the owner.
+                        format: date
+                        example: '2006-01-02'
+                      personal_id:
+                        type: string
+                        description: Personal ID number of the owner, optional for UK nationals.
+                      address:
+                        type: string
+                        description: Address of the owner, mandatory for UK company or people with different nationality from company.
+                      sanctioned:
+                        description: Whether the owner is sanctioned or not
+                        type: boolean
+                      pep:
+                        description: Whether the owner is a Politically Exposed Person or not.
+                        type: boolean
+                    required:
+                      - name
+                      - nationality
+                      - share
+                      - date_of_birth
+                      - personal_id
+                      - address
+                      - sanctioned
+                      - pep
+                directors:
+                  type: array
+                  minItems: 1
+                  description: Array of objects where each object is a director of the company.
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: Name of the director.
+                        example: John Doe
+                      nationality:
+                        type: string
+                        description: Nationality of the director.
+                        maxLength: 2
+                        minLength: 2
+                      position:
+                        type: string
+                        description: Position in the company.
+                        example: CEO
+                      date_of_birth:
+                        type: string
+                        description: Birth data of the director.
+                        format: date
+                        example: '2006-01-02'
+                      personal_id:
+                        type: string
+                        description: Personal ID number of the director, optional for UK nationals.
+                      address:
+                        type: string
+                        description: Address of the director, mandatory for UK company or people with different nationality from company.
+                      sanctioned:
+                        description: Whether the director is sanctioned or not
+                        type: boolean
+                      pep:
+                        description: Whether the director is a Politically Exposed Person or not.
+                        type: boolean
+                    required:
+                      - name
+                      - nationality
+                      - position
+                      - date_of_birth
+                      - personal_id
+                      - address
+                      - sanctioned
+                      - pep
+                corporate_structure:
+                  type: array
+                  description: Array of objects where each object is a company with at least 25% ownership. Unlimited companies.
+                  items:
+                    allOf:
+                      - type: object
+                        properties:
+                          description:
+                            type: string
+                            description: Describe the ownership and control structure of the companies and the beneficial owners (name, date of birth, address and personal identity number / citizenship). Mandatory within object.
+                      - $ref: '#/components/schemas/crn'
+                    required:
+                      - country_code
+                      - registration_number
+                      - description
+              example:
+                annual_revenue: 10000.5
+                incorporation_date: '2006-01-02'
+                financing_frequency: regular
+                financial_institution: false
+                income_source: business_activities
+                directors:
+                  - name: John Doe
+                    nationality: ES
+                    position: CEO
+                    date_of_birth: '1910-02-15'
+                    personal_id: Y9431949X
+                    address: Carrer Trueta 203, Barcelona
+                    sanctioned: false
+                    pep: false
+                ultimate_beneficial_owners:
+                  - name: John Doe
+                    nationality: ES
+                    share: 30
+                    date_of_birth: '1910-02-15'
+                    personal_id: Y9431949X
+                    address: Carrer Trueta 203, Barcelona
+                    sanctioned: false
+                    pep: false
+                corporate_structure:
+                  - description: Some desc
+                    country_code: ES
+                    registration_number: '12345678'
+      parameters:
+        - name: client_id
+          in: path
+          schema:
+            type: string
+            format: uuid
+            description: Unique identifier for the client.
+          required: true
+          example: eed517c8-fce6-425e-96a1-105fc15ad09d
+        - name: product
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/products'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json: {}
+        '400':
+          description: invalid form values
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: client not found
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Data already submitted.
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /client/{id}/bankdata:
+    post:
+      tags:
+        - Client Onboarding
+      summary: Submit Bank Data
+      description: Use this operation to submit Bank Data for the client onboarding process.
+      operationId: submitBankData
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/bankAccount'
+      parameters:
+        - name: id
+          in: path
+          schema:
+            type: string
+            format: uuid
+            description: Unique identifier for the client.
+          required: true
+          example: eed517c8-fce6-425e-96a1-105fc15ad09d
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid parameters
+                details: the company can not be a financial institution
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /client/{client_id}/product/{product}/contract/signers:
+    get:
+      tags:
+        - Client Onboarding
+      summary: Get Contract Signers
+      description: List contract signers and their status.
+      operationId: getContractSigners
+      parameters:
+        - name: client_id
+          in: path
+          schema:
+            type: string
+            format: uuid
+            description: Unique identifier for the client.
+          required: true
+          example: eed517c8-fce6-425e-96a1-105fc15ad09d
+        - name: product
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/products'
+      responses:
+        '200':
+          $ref: '#/components/responses/signersList'
+        '400':
+          description: invalid values
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: client not found
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /clients:
+    get:
+      tags:
+        - Client Onboarding
+      summary: List Clients
+      description: Use this operation to obtain a list of clients.
+      operationId: findClient
+      parameters:
+        - name: limit
+          schema:
+            type: integer
+          in: query
+          description: The number of items to obtain per response. The limit/offset schema is used for pagination. The maximum allowed value is 100.
+          example: 10
+          required: true
+        - name: offset
+          schema:
+            type: integer
+          in: query
+          description: The number of items to skip in the response. The limit/offset schema is used for pagination. The default value is 0.
+          example: 10
+          required: true
+        - name: id
+          schema:
+            type: string
+          in: query
+          description: Use to filter the result using a client ID. Multiple IDs in the query are supported using `key=value` pairs.
+          example: 665eac4d-e843-4dfa-a984-114670a39aff
+          required: false
+        - name: state
+          schema:
+            type: string
+            enum:
+              - NEW_LEAD
+              - LEAD_VERIFIED
+              - LEAD_REJECTED
+              - CONTRACT_SIGNED
+              - COMPANY_CREATED
+              - COMPANY_REQUESTED
+              - CONTRACT_SENT
+              - CONTRACT_GENERATED
+              - LEAD_INVALID_SIGNERS
+          in: query
+          description: Use to filter the result using client state. Multiple states in the query are supported using `key=value` pairs.
+          example: NEW_LEAD
+          required: false
+        - name: missing_bank_details
+          schema:
+            type: boolean
+          in: query
+          description: Use to filter the results to show companies that are missing only the bank details to complete the onboarding.
+          example: 'true'
+          required: false
+        - name: crn
+          schema:
+            type: string
+          in: query
+          description: Use to filter the result using CRN (country code + registration number). Multiple CRNs in the query are supported using `key=value` pairs.
+          example: GB11822335
+          required: false
+        - name: product_id
+          schema:
+            type: string
+            enum:
+              - ETR
+              - ETC
+          in: query
+          description: Use to filter the result using a product ID. Multiple product IDs in the query are supported using `key=value` pairs.
+          example: ETC
+          required: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: Paginated list of clients.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: Credit Client ID provided by Bankable.
+                          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+                        company_name:
+                          type: string
+                          description: Full company name.
+                          example: Bankable test
+                        state:
+                          type: string
+                          description: The onboarding state.
+                          example: NEW_LEAD
+                          enum:
+                            - NEW_LEAD
+                            - LEAD_VERIFIED
+                            - LEAD_REJECTED
+                            - CONTRACT_SIGNED
+                            - COMPANY_CREATED
+                            - COMPANY_REQUESTED
+                            - CONTRACT_SENT
+                            - CONTRACT_GENERATED
+                            - LEAD_INVALID_SIGNERS
+                        product_id:
+                          type: string
+                          description: Product identifier. The current options are **ETR** and **ETC**.
+                          example: ETR
+                        country_code:
+                          type: string
+                          description: ISO Country Code (two letter country code from ISO 3166).
+                          example: FI
+                        registration_number:
+                          type: string
+                          description: Company registration number.
+                          example: '09979111'
+                        iban:
+                          type: string
+                          description: Standard International Bank Account Number.
+                          example: FI1410093000123458
+                        bic:
+                          type: string
+                          description: The Bank Identifier Code or SWIFT Code, made up of 8 or 11 characters.
+                          example: BOHIUS77
+                        sort_code:
+                          type: string
+                          description: The 6 digit sort code that identifies the Client bank.
+                          example: '123456'
+                        account_number:
+                          type: string
+                          description: Client bank account number.
+                          example: '12345678'
+                        created_at:
+                          type: string
+                          description: Date at which the client was created.
+                          example: '2022-01-05'
+                        updated_at:
+                          type: string
+                          description: Date at which the client was last updated.
+                          example: '2022-01-06'
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                        description: The number of items in the response. The limit/offset schema is used for pagination.
+                        example: 20
+                      offset:
+                        type: integer
+                        description: The number of items to skip in the response. The limit/offset schema is used for pagination.
+                        example: 10
+                      total_items:
+                        type: integer
+                        description: The total number of items available in the dataset, which can be larger than the number of items included in the response.
+                        example: 2033
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid request fields
+                details: 'field: limit'
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 500
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 500
+                message: internal error
+                details: internal error
+  /client/{id}:
+    get:
+      tags:
+        - Client Onboarding
+      summary: Get Client Details
+      description: Use this operation to obtain the current status and details of a client.
+      operationId: getClient
+      parameters:
+        - name: id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Credit Client ID provided by Bankable. when the client was created (see the "Create Client" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+        - name: product_id
+          schema:
+            type: string
+          in: query
+          description: Product identifier. The current options are **ETR** and **ETC**.
+          example: ETC
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: Credit Client ID provided by Bankable.
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+                  company_name:
+                    type: string
+                    description: Full company name.
+                    example: Bankable test
+                  state:
+                    type: string
+                    description: The onboarding state.
+                    example: NEW_LEAD
+                    enum:
+                      - NEW_LEAD
+                      - LEAD_VERIFIED
+                      - LEAD_REJECTED
+                      - CONTRACT_SIGNED
+                      - COMPANY_CREATED
+                      - COMPANY_REQUESTED
+                      - CONTRACT_SENT
+                      - CONTRACT_GENERATED
+                      - LEAD_INVALID_SIGNERS
+                  product_id:
+                    type: string
+                    description: Product identifier. The current options are **ETR** and **ETC**.
+                    example: ETR
+                  country_code:
+                    type: string
+                    description: ISO Country code (two letter country code from ISO 3166).
+                    example: FI
+                  registration_number:
+                    type: string
+                    description: Company registration number.
+                    example: '09979111'
+                  iban:
+                    type: string
+                    description: Standard International Bank Account Number.
+                    example: FI1410093000123458
+                  bic:
+                    type: string
+                    description: The Bank Identifier Code or SWIFT Code, made up of 8 or 11 characters.
+                    example: BOHIUS77
+                  sort_code:
+                    type: string
+                    description: The 6 digit sort code that identifies the Client bank.
+                    example: '123456'
+                  account_number:
+                    type: string
+                    description: Client bank account number.
+                    example: '12345678'
+                  created_at:
+                    type: string
+                    description: Date at which the client was created.
+                    example: '2022-01-05'
+                  updated_at:
+                    type: string
+                    description: Date at which the client was last updated.
+                    example: '2022-01-06'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: wrong client id formatting. The formatting of client ID should be UUID
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 404
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 404
+                message: resource not found
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /client/{client_id}/financial:
+    post:
+      tags:
+        - Client Financials
+      summary: Submit Financial Data
+      description: This endpoint allows submitting client's financial information.
+      operationId: importFinancial
+      parameters:
+        - name: client_id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Credit Client ID provided by Bankable. when the client was created (see the "Create Client" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              description: List of companies and their financial information.
+              items:
+                type: object
+                properties:
+                  company_details:
+                    type: object
+                    description: Details about the company.
+                    $ref: '#/components/schemas/companyDetails'
+                  financial_details:
+                    type: array
+                    description: List of financial details by period.
+                    items:
+                      $ref: '#/components/schemas/financialDetails'
+                  accounts_payable:
+                    type: array
+                    description: List of accounts payable by Invoice ID.
+                    items:
+                      $ref: '#/components/schemas/accountPayable'
+                  accounts_receivable:
+                    type: array
+                    description: List of accounts receivable by Invoice ID.
+                    items:
+                      $ref: '#/components/schemas/accountReceivable'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid request fields
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /client/{client_id}/financial-status:
+    get:
+      tags:
+        - Client Financials
+      summary: Get financing indicator
+      description: Get a Client's eligibility status and financing limit indicator.
+      operationId: getFinancingIndicator
+      parameters:
+        - name: client_id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Credit Client ID provided by Bankable. when the client was created (see the "Create Client" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eligibility_status:
+                    type: string
+                    description: Eligibilty Status of the payable.
+                    enum:
+                      - pre-approved
+                      - declined
+                  financing_indicator:
+                    type: object
+                    properties:
+                      amount:
+                        description: The amount for financing indicator.
+                        type: number
+                        format: float
+                        example: 1000
+                      updated_at:
+                        description: Timestamp of the last update in ISO-8601 format.
+                        type: string
+                        example: '2021-10-27T00:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Client not found.
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/Internal'
+  /invoice/price-breakdown:
+    get:
+      tags:
+        - Invoice Finance
+      summary: Get Invoice Finance Price Breakdown
+      description: This endpoint allows obtaining an estimated price breakdown before financing an invoice.
+      operationId: getPriceBreakdown
+      parameters:
+        - name: debtor_country_code
+          schema:
+            type: string
+          in: query
+          description: The debtor's two-letter country code in ISO 3166 format.
+          example: ES
+          required: true
+        - name: debtor_crn
+          schema:
+            type: string
+          in: query
+          description: The debtor's Company Registration Number.
+          example: '12345678'
+          required: true
+        - name: issuer_country_code
+          schema:
+            type: string
+          in: query
+          description: The issuer's two-letter country code in ISO 3166 format.
+          example: ES
+          required: true
+        - name: issuer_crn
+          schema:
+            type: string
+          in: query
+          description: The issuer's Company Registration Number.
+          example: '12345678'
+          required: true
+        - name: face_value
+          schema:
+            type: number
+            format: float
+          in: query
+          description: The invoice face value can only include numbers and dot (.) must be presented in (EUR) or pence (GBP). For example, 100.00 EUR .
+          example: 4712
+          required: true
+        - name: due_date
+          schema:
+            type: string
+          in: query
+          description: The due date as shown on the potential invoice to be financed. Should be in format YYYY-MM-DD, for example, 2022-01-01.
+          example: '2022-10-13'
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  debtor_grade:
+                    type: string
+                    description: The debtor's credit rating obtained from the credit report.
+                    example: b
+                  currency:
+                    type: string
+                    description: The currency can be either EUR or GBP depending on the partner configuration.
+                    example: EUR
+                  financed_percentage:
+                    type: number
+                    format: float
+                    description: The percentage that Bankable would finance of the invoice face value (usually between 0.85-1, meaning 85-100%).
+                    example: 1
+                  financed_value:
+                    type: number
+                    format: float
+                    description: The value to be financed (the amount is usually 85-100% of the invoice face value).
+                    example: 4712
+                  financing_duration:
+                    type: integer
+                    description: The total number of days between the financed and maturity date including both days. The maturity date is one business day after the invoice due date.
+                    example: 17
+                  fees_amount:
+                    type: number
+                    format: float
+                    description: The total amount of estimated fees for financing the invoice.
+                    example: 121.17
+                  overdue_deposit_days:
+                    type: integer
+                    description: In case there will be an overdue deposit, it will be calculated for the number of overdue days. If the invoice is overdue for more than the overdue deposit days, the full amount of the deposit will be lost.
+                    example: 60
+                  overdue_deposit_percentage:
+                    type: number
+                    format: float
+                    description: The estimated overdue deposit amount divided by the estimated financed value.
+                    example: 0.07
+                  overdue_deposit_amount:
+                    type: number
+                    format: float
+                    description: The estimated overdue deposit amount is based on the estimated late payment interest for investors and the number of overdue deposit days.
+                    example: 329.84
+                  overdue_deposit_daily_amount:
+                    type: number
+                    format: float
+                    description: The estimated daily overdue fee would be paid to the investors from the overdue deposit in case the invoice would be overdue.
+                    example: 5.5
+                  proceeds_amount:
+                    type: number
+                    format: float
+                    description: The estimated proceeds amount would be transferred to the Issuer when the invoice has been financed. The amount is the estimated financed value minus the total estimated fees amount and estimated overdue deposit amount.
+                    example: 4260.99
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid parameters
+                details: The debtor's Company Registration Number is missing.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /invoice:
+    post:
+      tags:
+        - Invoice Finance
+      summary: Submit Invoice
+      description: This endpoint allows submitting invoices for financing.
+      operationId: createInvoice
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                amount:
+                  description: The invoice amount can only include numbers and dot (.) must be presented in (EUR) or pence (GBP). For example, 100.00 EUR.
+                  type: number
+                  format: float
+                issuer_country_code:
+                  description: The issuer's two-letter country code in ISO 3166 format.
+                  type: string
+                  example: ES
+                issuer_registration_number:
+                  description: The issuer's Company Registration Number.
+                  type: string
+                debtor_country_code:
+                  description: The debtor's two-letter country code in ISO 3166 format.
+                  type: string
+                debtor_registration_number:
+                  description: The debtor's Company Registration Number.
+                  type: string
+                invoice_number:
+                  description: The invoice number as shown on the invoice.
+                  type: string
+                currency:
+                  description: The currency must be either EUR or GBP.
+                  type: string
+                  enum:
+                    - EUR
+                    - GBP
+                issue_date:
+                  description: The issue date should be in format YYYY-MM-DD, for example, 2022-01-01.
+                  type: string
+                  format: date
+                due_date:
+                  description: The due date should be in format YYYY-MM-DD, for example, 2022-01-01.
+                  type: string
+                  format: date
+                payment_reference:
+                  description: If there is no separate payment reference number, you can use the invoice number instead.
+                  type: string
+                pdf:
+                  description: The invoice PDF file.
+                  type: string
+                  format: binary
+              required:
+                - issuer_country_code
+                - issuer_registration_number
+                - debtor_country_code
+                - debtor_registration_number
+                - invoice_number
+                - currency
+                - amount
+                - issue_date
+                - due_date
+                - payment_reference
+                - pdf
+            encoding:
+              pdf:
+                contentType: application/pdf
+            example:
+              issuer_country_code: FI
+              issuer_registration_number: 1234567-8
+              debtor_country_code: FI
+              debtor_registration_number: '00000000'
+              invoice_number: '1002'
+              currency: EUR
+              amount: 100
+              issue_date: '2020-10-20'
+              due_date: '2020-11-10'
+              payment_reference: REF-123
+              pdf: some-document.pdf
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id:
+                    type: string
+                    format: uuid
+                    description: Please persist the Bankable invoice ID to get further updates and details about the invoice.
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid parameters.
+                details: The issuer's Company Country Code is missing.
+        '409':
+          description: Conflict
+          $ref: '#/components/responses/Conflict'
+          content:
+            application/json:
+              example:
+                code: 409
+                message: This issuer has already submitted an invoice with the same invoice number.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /invoices:
+    get:
+      tags:
+        - Invoice Finance
+      summary: List Invoices
+      description: This endpoint allows retrieving a paginated list of invoices, applying filters and sorting options.
+      operationId: findInvoices
+      parameters:
+        - name: limit
+          schema:
+            type: string
+          in: query
+          description: The number of items to obtain per response. The limit/offset schema is used for pagination. The default value is 10. The maximum allowed value is 100.
+          example: 10
+        - name: offset
+          schema:
+            type: string
+          in: query
+          description: The number of items to skip in the response. The limit/offset schema is used for pagination. The default value is 0.
+          example: 20
+        - name: sort_by
+          schema:
+            type: string
+            enum:
+              - created_at
+              - invoice_number
+              - payment_reference
+              - face_value
+              - currency
+              - debtor_registration_number
+              - debtor_country
+              - issuer_registration_number
+              - issuer_country
+              - issuer_name
+          in: query
+          description: Use to determine which value to use to sort the paginated result. The default value is created_at.
+          example: created_at
+        - name: descending
+          schema:
+            type: string
+          in: query
+          description: Use to determine the sorting order as either descending or ascending. The default value is false, which corresponds to ascending order.
+          example: true
+        - name: invoice_number
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the invoice number given.
+          example: 1038
+        - name: invoice_number[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of invoice number. You must use this filter by adding multiple times this query parameter with different values.
+          example: 1038&invoice_number[]=1037
+        - name: payment_reference
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the payment reference given.
+          example: 4599
+        - name: payment_reference[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of payment references. You must use this filter by adding multiple times this query parameter with different values.
+          example: 1038&payment_reference[]=1037
+        - name: face_value_from
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by face value above than the given one. It must be sent as cents. For example, the value 191.95 has to be sent as 19195.
+          example: 19195
+        - name: face_value_to
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by face value below than the given one. It must be sent as cents. For example, the value 191.95 has to be sent as 19195.
+          example: 19195
+        - name: currency
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the currency code given. The format is ISO 4217.
+          example: EUR
+        - name: currency[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of currencies. You must use this filter by adding multiple times this query parameter with different values. The format is ISO 4217.
+          example: EUR&currency[]=GBP
+        - name: issuer_name_like
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the given issuer name. The like suffix determines that the query we end up doing is a LIKE %VALUE%.
+          example: House
+        - name: issuer_country[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of issuer country codes in ISO 3166 format. You must use this filter by adding multiple times this query parameter with different values.
+          example: ES&issuer_country[]=GB
+        - name: issuer_registration_number
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the issuer registration number given.
+          example: 324234
+        - name: issuer_registration_number[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of issuer registration numbers. You must use this filter by adding multiple times this query parameter with different values.
+          example: 33343&issuer_registration_number[]=5554454
+        - name: debtor_name_like
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the given debtor name. The like suffix determines that the query we end up doing is a LIKE %VALUE%.
+          example: John Smith
+        - name: debtor_country[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of debtor countries in ISO 3166 format. You must use this filter by adding multiple times this query parameter with different values.
+          example: ES&debtor_country[]=GB
+        - name: debtor_registration_number
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by the debtor registration number given.
+          example: 324234
+        - name: debtor_registration_number[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the invoice list by a collection of debtor registration numbers. You must use this filter by adding multiple times this query parameter with different values.
+          example: 33343&debtor_registration_number[]=5554454
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: List of paginated invoices.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Unique identifier for the invoice provided by Bankable.
+                          example: d8dd3775-dc64-4e33-b4d6-a99386e5929b
+                        invoice_number:
+                          type: string
+                          description: Number of the invoice.
+                          example: INV-004
+                        payment_reference:
+                          type: string
+                          description: Payment reference of the invoice.
+                          example: REF-004
+                        face_value:
+                          type: number
+                          format: float
+                          description: Total amount of the invoice.
+                          example: 1726.4
+                        currency:
+                          type: string
+                          description: Currency of the invoice.
+                          example: GBP
+                        issue_date:
+                          type: string
+                          description: The date when the invoice was issued in RFC3339 format.
+                          example: '2018-01-31T00:00:00Z'
+                        due_date:
+                          type: string
+                          description: The date when the invoice will be dued in RFC3339 format.
+                          example: '2018-02-21T00:00:00Z'
+                        rejected_date:
+                          type: string
+                          description: The date when the invoice was rejected in RFC3339 format.
+                          example: '2018-02-22T00:00:00Z'
+                        settled_date:
+                          type: string
+                          description: The date when the invoice was settled in RFC3339 format.
+                          example: '2018-02-22T00:00:00Z'
+                        writtenoff_date:
+                          type: string
+                          description: The date when the invoice was written off in RFC3339 format.
+                          example: '2018-02-22T00:00:00Z'
+                        issuer_name:
+                          type: string
+                          description: The issuer's name of the invoice.
+                          example: John Doe
+                        issuer_country_code:
+                          type: string
+                          description: The issuer's two-letter country code in ISO 3166 format.
+                          example: GB
+                        issuer_registration_number:
+                          type: string
+                          description: The issuer's registration number.
+                          example: 22373738
+                        debtor_name:
+                          type: string
+                          description: The debtor's name of the invoice.
+                          example: John Smith
+                        debtor_country_code:
+                          type: string
+                          description: The debtor's two-letter country code in ISO 3166 format.
+                          example: GB
+                        debtor_registration_number:
+                          type: string
+                          description: The debtor's registration number.
+                          example: 4488474
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                        description: The number of items per response. The limit/offset schema is used for pagination.
+                        example: 20
+                      offset:
+                        type: integer
+                        description: The number of items to skip in the response. The limit/offset schema is used for pagination.
+                        example: 10
+                      total_items:
+                        type: integer
+                        description: The total number of items available in the dataset, which can be larger than the number of items included in the response.
+                        example: 2033
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Sorting is not allowed by the field 'updated_at'.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /invoice/{id}:
+    get:
+      tags:
+        - Invoice Finance
+      summary: Get Invoice Details
+      description: This endpoint allows obtaining the current status and details of an invoice.
+      operationId: getInvoice
+      parameters:
+        - name: id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Invoice ID provided by Bankable when the invoice was created (see the "Create invoice" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id:
+                    type: string
+                    format: uuid
+                    description: Invoice ID provided by Bankable.
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+                  invoice_number:
+                    type: string
+                    description: The invoice number as shown on the invoice.
+                    example: '100'
+                  invoice_reference:
+                    type: string
+                    description: If there is no separate payment reference number, this will be the invoice number instead.
+                    example: '101'
+                  payment_status:
+                    type: string
+                    description: The current payment status for the invoice. If Bankable doesn't have information about the payment, the ```payment_status``` can be empty.
+                    enum:
+                      - OUTSTANDING
+                      - OVERDUE
+                      - DEFAULTED
+                      - WRITTEN_OFF
+                      - SETTLED
+                    example: WRITTEN_OFF
+                  financing_status:
+                    type: string
+                    description: The current financing status for the invoice.
+                    enum:
+                      - ERROR
+                      - PENDING
+                      - PRE_APPROVED
+                      - APPROVED
+                      - FINANCED
+                      - REJECTED
+                      - CANCELLED
+                    example: FINANCED
+                  issuer_name:
+                    type: string
+                    description: The issuer's company name obtained from public sources.
+                    example: Bankable - Issuer
+                  issuer_registration_number:
+                    type: string
+                    description: The issuer's Company Registration Number.
+                    example: '12345678'
+                  issuer_country_code:
+                    type: string
+                    description: The issuer's two-letter country code in ISO 3166 format.
+                    example: FI
+                  issuer_grade:
+                    type: string
+                    description: The issuer's credit rating that was obtained from the credit report at the moment of financing.
+                    example: AAA
+                  debtor_name:
+                    type: string
+                    description: The debtor's company name obtained from public sources.
+                    example: Bankable - Debtor
+                  debtor_registration_number:
+                    type: string
+                    description: The debtor's Company Registration Number.
+                    example: '12345678'
+                  debtor_country_code:
+                    type: string
+                    description: The debtor's two-letter country code in ISO 3166 format.
+                    example: FI
+                  debtor_grade:
+                    type: string
+                    description: The debtor's credit rating that was obtained from the credit report at the moment of financing.
+                    example: B
+                  currency:
+                    type: string
+                    description: The currency can be either EUR or GBP.
+                    example: EUR
+                  issue_date:
+                    type: string
+                    description: The invoice issue date in RFC3339 format.
+                    example: '2021-10-27T00:00:00Z'
+                  due_date:
+                    type: string
+                    description: The invoice due date in RFC3339 format.
+                    example: '2021-11-10T00:00:00Z'
+                  face_value:
+                    type: number
+                    format: float
+                    description: The face value of the invoice.
+                    example: 3702.09
+                  settlement_date:
+                    type: string
+                    description: The invoice settlement date in RFC3339 format.
+                    example: '2021-10-27T00:00:00Z'
+                  rejected_date:
+                    type: string
+                    description: The invoice rejected date in RFC3339 format.
+                    example: '2021-10-27T00:00:00Z'
+                  rejected_reason:
+                    type: string
+                    description: The invoice reject reason.
+                    example: INVOICE_B_RATED
+                  payment_terms:
+                    type: integer
+                    description: The invoice payment terms.
+                    example: '30'
+                  financed_percentage:
+                    type: number
+                    format: float
+                    description: The percentage that Bankable financed of the invoice face value (usually between 0.85-1, meaning 85-100%).
+                    example: 1
+                  financed_value:
+                    type: number
+                    format: float
+                    description: Financed value (the amount is usually 85-100% of the invoice face value).
+                    example: 3702.09
+                  financing_duration:
+                    type: integer
+                    description: The total number of days between the financed and maturity date including both days.
+                    example: 14
+                  fees_percentage:
+                    type: number
+                    format: float
+                    description: Total fees amount divided by the financed value.
+                    example: 0.0106
+                  fees_amount:
+                    type: number
+                    format: float
+                    description: The total fees for financing the invoice.
+                    example: 39.35
+                  overdue_deposit_days:
+                    type: integer
+                    description: In case there is an overdue deposit, it has been calculated for the number of overdue days. If the invoice is overdue for more than the overdue deposit days, the full amount of the deposit will be lost.
+                    example: 60
+                  overdue_deposit_percentage:
+                    type: number
+                    format: float
+                    description: The overdue deposit amount divided by the financed value.
+                    example: 0.0201
+                  overdue_deposit_amount:
+                    type: number
+                    format: float
+                    description: The overdue deposit amount is based on the late payment interest for investors and the number of overdue deposit days.
+                    example: 74.4
+                  overdue_deposit_daily_amount:
+                    type: number
+                    format: float
+                    description: The daily overdue fee is paid to the investors from the overdue deposit in case the invoice is overdue.
+                    example: 1.24
+                  proceeds_amount:
+                    type: number
+                    format: float
+                    description: The proceeds amount is transferred to the Issuer when the invoice has been financed. The amount is the financed value less the total fees amount and potential overdue deposit amount.
+                    example: 3588.34
+                  financed_date:
+                    type: string
+                    description: The invoice financed date in ISO-8601 format.
+                    example: '2021-10-28T00:00:00Z'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid invoice id.
+        '403':
+          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+          content:
+            application/json:
+              example:
+                code: 403
+                message: This partner has no access to the given invoice.
+        '404':
+          description: Not Found
+          $ref: '#/components/responses/NotFound'
+          content:
+            application/json:
+              example:
+                code: 404
+                message: The invoice cannot be found.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /invoice/{id}/cancel:
+    post:
+      tags:
+        - Invoice Finance
+      summary: Cancel Invoice Finance
+      description: This endpoint allows to cancel an invoice's financing.
+      operationId: cancelInvoice
+      parameters:
+        - name: id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Invoice ID provided by Bankable when the invoice was created (see the "Create invoice" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice_id:
+                    type: string
+                    format: uuid
+                    description: The invoice ID provided by Bankable.
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+                  financing_status:
+                    type: string
+                    description: The current financing status for the invoice.
+                    enum:
+                      - ERROR
+                      - PENDING
+                      - PRE_APPROVED
+                      - APPROVED
+                      - FINANCED
+                      - REJECTED
+                      - CANCELLED
+                    example: CANCELLED
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid invoice id.
+        '403':
+          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+          content:
+            application/json:
+              example:
+                code: 403
+                message: This partner has no access to the given invoice.
+        '404':
+          description: Not Found
+          $ref: '#/components/responses/NotFound'
+          content:
+            application/json:
+              example:
+                code: 404
+                message: The invoice cannot be found.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /credit/price-breakdown:
+    get:
+      tags:
+        - Credit
+      summary: Get Credit Price Breakdown
+      description: This endpoint allows obtaining the price breakdown for multiple instalment and credit amount combinations after submitting financial data and before submitting a new credit request.
+      operationId: getCreditPriceBreakdown
+      parameters:
+        - name: country
+          schema:
+            type: string
+          in: query
+          description: ISO Country Code (two letter country code from ISO 3166).
+          example: FI
+          required: true
+        - name: registration_number
+          schema:
+            type: string
+          in: query
+          description: Company registration number.
+          example: '09979111'
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  evaluation_ok:
+                    type: boolean
+                    description: Whether the credit request has been approved or not.
+                    example: true
+                  expiration_date:
+                    type: string
+                    description: The date at which the credit offer will expire. After this date, the offer will no longer be valid and the client will need to request pricing for a new credit.
+                    example: '2022-12-24'
+                  score:
+                    type: integer
+                    description: Internal credit score (0-100) used to define pricing. Based on the financial data of the client.
+                    example: 77
+                  min_annual_percentage_rate:
+                    type: string
+                    description: The minimum annual percentage rate (APR). Obtainable by requesting any financing option with the maximum amount of instalments offered.
+                    example: 4.78%
+                  max_annual_percentage_rate:
+                    type: string
+                    description: The maximum annual percentage rate (APR). Obtainable by requesting any financing option with the minimum amount of instalments offered.
+                    example: 9.13%
+                  matrix:
+                    type: array
+                    description: Contains information for the different credit amounts and durations.
+                    items:
+                      type: object
+                      properties:
+                        amount:
+                          description: The order number of the instalment.
+                          type: number
+                          format: float
+                          example: 1000
+                        installments_amount:
+                          description: The total number of instalments that will be required to repay the credit.
+                          type: integer
+                          example: 6
+                        total_payable_amount:
+                          description: The total amount that the client will need to pay back, this includes ```total_fees_amount```.
+                          type: number
+                          format: float
+                          example: 1055.52
+                        total_fees_amount:
+                          description: The total amount of interest and fees that will be charged for the credit.
+                          type: number
+                          format: float
+                          example: 30
+                        annual_percentage_rate:
+                          description: Annual percentage rate (APR) is a percentage that represents the actual yearly cost of funds over the term of the credit. This includes fees and interest.
+                          type: string
+                          example: 7.25%
+                        installments:
+                          description: Contains information for the different instalments.
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              number:
+                                description: The number of the instalment within the total number of instalments.
+                                type: integer
+                                example: 1
+                              monthly_total_payable_amount:
+                                description: The total amount that the client will need to pay back each month, this includes ```monthly_total_fees_amount```.
+                                type: number
+                                format: float
+                                example: 175.92
+                              monthly_total_fees_amount:
+                                description: The total amount of interest and fees that will be charged each month for the credit.
+                                type: number
+                                format: float
+                                example: 30
+                              monthly_principal_amount:
+                                description: The amount of the principal (the original loan amount) that will be due each month.
+                                type: number
+                                format: float
+                                example: 138.82
+                              remaining_balance:
+                                description: The remaining balance on the credit after a given instalment has been paid. It is calculated by subtracting the ```monthly_principal_amount``` and the ```monthly_total_fees_amount``` from the previous installment's ```remaining_balance```.
+                                type: number
+                                format: float
+                                example: 861.18
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: crn missing or not valid
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /credit:
+    post:
+      tags:
+        - Credit
+      summary: Submit Credit
+      description: This endpoint allows submitting credit requests for financing.
+      operationId: createCredit
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                amount:
+                  description: The credit amount can only include numbers and dot (.). For example, 100.00.
+                  type: number
+                  format: float
+                installments:
+                  description: The number of instalments should be a number higher than 0.
+                  type: integer
+                currency:
+                  description: The currency must be either EUR or GBP.
+                  type: string
+                  enum:
+                    - EUR
+                    - GBP
+                client_id:
+                  description: The unique identifier for the client provided by Bankable.
+                  type: string
+                  format: uuid
+              required:
+                - amount
+                - installments
+                - currency
+                - client_id
+              example:
+                amount: 1000
+                currency: EUR
+                installments: 10
+                client_id: e4fc84a1-ed7f-48a3-a77c-db323af93c92
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: Please, persist the Bankable Credit ID to get further updates and details about the credit.
+                    example: b1392c00-c553-4a9f-96db-098aa83471d1
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid parameters.
+                details: The currency is incorrect format. The currency must be either EUR or GBP.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /credits:
+    get:
+      tags:
+        - Credit
+      summary: List Credits
+      description: This endpoint allows retrieving a paginated list of credits, applying filters and sorting options.
+      operationId: findCredits
+      parameters:
+        - name: limit
+          schema:
+            type: string
+          in: query
+          description: The number of items to obtain per response. The limit/offset schema is used for pagination. The default value is 10. The maximum allowed value is 100.
+          example: 10
+        - name: offset
+          schema:
+            type: string
+          in: query
+          description: The number of items to skip in the response. The limit/offset schema is used for pagination. The default value is 0.
+          example: 20
+        - name: sort_by
+          schema:
+            type: string
+            enum:
+              - id
+              - created_at
+              - number
+              - state
+              - amount
+              - currency
+              - installments
+              - client_id
+          in: query
+          description: Use to determine which value to use to sort the paginated result. The default value is created_at.
+          example: created_at
+        - name: descending
+          schema:
+            type: string
+          in: query
+          description: Use to determine the sorting order as either descending or ascending. The default value is false, which corresponds to ascending order.
+          example: true
+        - name: id[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by a collection of credit IDs. You must use this filter by adding multiple times this query parameter with different values.
+          example: a8168c04-9ee0-4d3a-88b3-2ba644ffce43&id[]=3786dbc1-953e-4c35-9e37-f60e00717d7b
+        - name: number[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by a collection of credit number. You must use this filter by adding multiple times this query parameter with different values.
+          example: CL-1&number[]=CL-2
+        - name: state[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by a collection of credit states. You must use this filter by adding multiple times this query parameter with different values.
+          example: APPROVED&state[]=DECLINED
+        - name: amount_from
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by amount value above than the given one. It must be sent as cents. For example, the value 191.95 has to be sent as 19195.
+          example: 19195
+        - name: amount_to
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by amount value below than the given one. It must be sent as cents. For example, the value 191.95 has to be sent as 19195.
+          example: 19195
+        - name: currency[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by a collection of currencies. You must use this filter by adding multiple times this query parameter with different values. The format is ISO 4217.
+          example: EUR&currency[]=GBP
+        - name: installments
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by the number of instalments given.
+          example: 6
+        - name: client_id[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the credits list by a collection of client IDs. You must use this filter by adding multiple times this query parameter with different values. The format is ISO 4217.
+          example: 9d4153a3-f708-4e47-967e-bebd619a76a4&client_id[]=db9beb15-ec04-4ff5-9f3f-0f00fd03a9d3
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: List of paginated credits.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Credit ID provided by Bankable.
+                          example: d8dd3775-dc64-4e33-b4d6-a99386e5929b
+                        created_at:
+                          type: string
+                          description: Timestamp of the Credit creation in RFC3339 format.
+                          example: '2022-11-07T11:43:13Z'
+                        updated_at:
+                          type: string
+                          description: Timestamp of the last update in RFC3339 format.
+                          example: '2022-11-07T11:43:13Z'
+                        state:
+                          type: string
+                          description: The payment status.
+                          example: APPROVED
+                        installments_count:
+                          type: integer
+                          description: Requested number of instalments.
+                          example: 10
+                        requested_amount:
+                          type: number
+                          format: float
+                          description: Requested credit amount.
+                          example: 1000
+                        currency:
+                          type: string
+                          description: The currency can be either EUR or GBP.
+                          example: EUR
+                        evaluation_passed:
+                          type: boolean
+                          description: Evaluation result is based on the automatic underwriting model and it can be either true or false.
+                          example: true
+                        maximum_limit_exceeded:
+                          type: boolean
+                          description: If the requested amount exceeds the maximum limit account, this value will be true, otherwise false.
+                          example: true
+                        client:
+                          type: object
+                          description: Details of the client.
+                          properties:
+                            id:
+                              description: The unique identifier for the client provided by Bankable.
+                              type: string
+                              format: uuid
+                              example: 130f0198-ce08-4434-82d3-18ad0810f877
+                            name:
+                              description: The client's company name.
+                              type: string
+                              example: ACME
+                            country:
+                              description: The client's two-letter country code in ISO 3166 format.
+                              type: string
+                              example: GB
+                            registration_number:
+                              description: The client's Company Registration Number.
+                              type: string
+                              example: '12345678'
+                            credit_rating:
+                              description: The client's credit rating that was obtained from the credit report at the moment of financing.
+                              type: string
+                              example: AAA
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Sorting is not allowed by the field 'updated_at'.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /credit/{id}:
+    get:
+      tags:
+        - Credit
+      summary: Get Credit Details
+      description: This endpoint allows obtaining the current status and details of a credit.
+      operationId: getCredit
+      parameters:
+        - name: id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Credit ID provided by Bankable when the credit was created (see the "Create Credit" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credit:
+                    type: object
+                    description: Details of the credit.
+                    properties:
+                      id:
+                        description: Credit ID provided by Bankable.
+                        type: string
+                        format: uuid
+                        example: cbbd0a65-a149-436a-99bd-06e819a44da9
+                      created_at:
+                        description: Timestamp of the Credit creation in RFC3339 format.
+                        type: string
+                        example: '2021-10-27T00:00:00Z'
+                      updated_at:
+                        description: Timestamp of the last update in RFC3339 format.
+                        type: string
+                        example: '2021-10-27T00:00:00Z'
+                      number:
+                        description: The Credit number provided by Bankable.
+                        type: string
+                        example: CL-001
+                      state:
+                        description: The current payment status for the credit.
+                        type: string
+                        enum:
+                          - EVALUATION_OK
+                          - EVALUATION_NOK
+                          - PRE_APPROVED
+                          - DECLINED
+                          - EXPIRED
+                          - APPROVED
+                          - REJECTED
+                          - CANCELLED
+                          - FINANCED
+                          - OVERDUE
+                          - DELINQUENT
+                          - DEFAULTED
+                          - WRITTEN_OFF
+                          - SETTLED
+                        example: APPROVED
+                      installments_count:
+                        description: Requested number of instalments.
+                        type: integer
+                        example: 5
+                      requested_amount:
+                        description: Requested credit amount.
+                        type: number
+                        format: float
+                        example: 5000
+                      currency:
+                        description: The currency can be either EUR or GBP.
+                        type: string
+                        enum:
+                          - EUR
+                          - GBP
+                        example: GBP
+                      evaluation_passed:
+                        description: Evaluation result is based on the automatic underwriting model and it can be either true or false.
+                        type: boolean
+                        example: true
+                      maximum_limit_exceeded:
+                        description: If the requested amount exceeds the maximum limit account, this value will be true, otherwise false.
+                        type: boolean
+                        example: true
+                      isin:
+                        description: International Securities Identification Number (ISIN) of the ETC.
+                        type: string
+                        example: FICLA8DW19V6
+                  client:
+                    type: object
+                    description: Details of the client.
+                    properties:
+                      id:
+                        description: The unique identifier for the client provided by Bankable.
+                        type: string
+                        format: uuid
+                        example: 130f0198-ce08-4434-82d3-18ad0810f877
+                      name:
+                        description: The client's company name.
+                        type: string
+                        example: ACME
+                      country:
+                        description: The client's two-letter country code in ISO 3166 format.
+                        type: string
+                        example: GB
+                      registration_number:
+                        description: The client's Company Registration Number.
+                        type: string
+                        example: '12345678'
+                      credit_rating:
+                        description: The client's credit rating that was obtained from the credit report at the moment of financing.
+                        type: string
+                        example: AAA
+                  installments:
+                    type: array
+                    description: List of instalments.
+                    items:
+                      type: object
+                      properties:
+                        number:
+                          description: The order number of the instalment.
+                          type: string
+                          example: '1'
+                        created_at:
+                          description: Creation timestamp in ISO-8601 format.
+                          type: string
+                          example: '2021-10-27T00:00:00Z'
+                        updated_at:
+                          description: Timestamp of the last update in ISO-8601 format.
+                          type: string
+                          example: '2021-10-27T00:00:00Z'
+                        state:
+                          description: Current state of the instalment.
+                          type: string
+                          enum:
+                            - OUTSTANDING
+                            - OVERDUE
+                            - PRE_SETTLED
+                            - PARTIALLY_SETTLED
+                            - FULLY_SETTLED
+                          example: OUTSTANDING
+                        due_date:
+                          description: The date limit when this instalment should be paid.
+                          type: string
+                          example: '2021-01-01'
+                        maturity_date:
+                          description: The next business date after the due date taking into account weekends and public holidays.
+                          type: string
+                          example: '2021-01-01'
+                        monthly_total_payable:
+                          description: The total amount to be paid monthly (the sum of the principal and fees).
+                          type: number
+                          format: float
+                          example: 1010.25
+                        monthly_principal_amount:
+                          description: The total principal amount to be paid monthly.
+                          type: number
+                          format: float
+                          example: 1000
+                        monthly_total_fees_amount:
+                          description: The total fees to be paid monthly.
+                          type: number
+                          format: float
+                          example: 10.25
+                        monthly_remaining_balance:
+                          description: The remaining principal amount after the instalment has been paid.
+                          type: number
+                          format: float
+                          example: 4000
+                        pre_settled_amount:
+                          description: The amount that Bankable has received and is waiting for final approval for settlement of the instalment.
+                          type: number
+                          format: float
+                          example: 1000
+                        final_settled_amount:
+                          description: The amount that Bankable has received and approved for settlement of the instalment.
+                          type: number
+                          format: float
+                          example: 1000
+                        invoice_url:
+                          description: URL to the Invoice PDF generated for this instalment valid for 24 hours. Only expected when invoice_state is PROCESSED
+                          type: string
+                          example: some_url
+                        invoice_state:
+                          description: State of the generation for the invoice PDF.
+                          type: string
+                          enum:
+                            - PROCESSED
+                            - PENDING
+                            - ERROR
+                          example: PROCESSED
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid credit id.
+        '403':
+          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+          content:
+            application/json:
+              example:
+                code: 403
+                message: This partner has no access to the given credit.
+        '404':
+          description: Not Found
+          $ref: '#/components/responses/NotFound'
+          content:
+            application/json:
+              example:
+                code: 404
+                message: The credit cannot be found.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /credit/{id}/cancel:
+    post:
+      tags:
+        - Credit
+      summary: Cancel Credit
+      description: This endpoint allows cancelling a submitted credit request that Bankable still needs to approve for financing.
+      operationId: cancelCredit
+      parameters:
+        - name: id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the Credit ID provided by Bankable when the Credit was created (see the "Create Credit" response).
+          example: cbbd0a65-a149-436a-99bd-06e819a44da9
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credit_id:
+                    type: string
+                    format: uuid
+                    description: The Credit ID provided by Bankable.
+                    example: cbbd0a65-a149-436a-99bd-06e819a44da9
+                  state:
+                    type: string
+                    description: The state of the Credit after cancellation.
+                    example: CANCELLED
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid credit id.
+        '403':
+          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+          content:
+            application/json:
+              example:
+                code: 403
+                message: This partner has no access to the given credit.
+        '404':
+          description: Not Found
+          $ref: '#/components/responses/NotFound'
+          content:
+            application/json:
+              example:
+                code: 404
+                message: The credit cannot be found.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /payables/price-breakdown:
+    get:
+      tags:
+        - Payables Finance
+      summary: Get Payables Finance Price Breakdown
+      description: This endpoint allows obtaining a price breakdown before financing payables.
+      operationId: getPayablesPriceBreakdown
+      parameters:
+        - name: id
+          in: query
+          description: The unique identifier for the client provided by Bankable.
+          schema:
+            type: string
+          example: e4fc84a1-ed7f-48a3-a77c-db323af93c92
+          required: true
+        - name: financing_amount
+          in: query
+          description: The total amount that a Client desires to finance (1 or more payables).
+          schema:
+            type: number
+            format: float
+          example: 500
+          required: true
+        - name: repayment_method
+          in: query
+          description: Whether a Client wants to repay the financing in weekly or monthly instalments.
+          schema:
+            type: string
+            enum:
+              - weekly_instalments
+              - monthly_instalments
+          example: weekly_instalments
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  financing_amount:
+                    type: number
+                    format: float
+                    description: The total amount that a Client desires to finance.
+                    example: 500
+                  repayment_method:
+                    type: string
+                    description: Whether a Client has requested weekly or monthly instalments.
+                    enum:
+                      - weekly_instalments
+                      - monthly_instalments
+                    example: weekly_instalments
+                  annual_interest_rate:
+                    type: number
+                    format: float
+                    description: The annual interest rate applied to the outstanding loan principal as a periodic interest rate calculated monthly or weekly based on the selected repayment method.
+                    example: 0.0975
+                  fees_rate:
+                    type: number
+                    format: float
+                    description: The fees percentage that is applied to the total financing amount and charged once as part of the first repayment instalment.
+                    example: 0.025
+                  total_fees_amount:
+                    type: number
+                    format: float
+                    description: The total fees to be paid in the repayment.
+                    example: 25.33
+                  instalments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        total_instalments:
+                          type: integer
+                          description: The total number of instalments that will be required to repay the financing.
+                          example: 3
+                        instalment_repayment_amount:
+                          type: number
+                          format: float
+                          description: The total amount that the client will need to pay back with each instalment (weekly/monthly).
+                          example: 215.33
+                        total_interest_amount:
+                          type: number
+                          format: float
+                          description: The total interest amount that will be charged for the financing.
+                          example: 45.98
+                        total_repayment_amount:
+                          type: number
+                          format: float
+                          description: The total amount that the client will need to pay back, including total_fees_amount.
+                          example: 645.99
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid parameters
+                details: The client's id is missing.
+        '500':
+          description: Internal Error
+          $ref: '#/components/responses/Internal'
+  /payables:
+    post:
+      tags:
+        - Payables Finance
+      summary: Submit Payables
+      description: This endpoint allows submitting one or more payables for financing and receive a payment plan to review.
+      operationId: submitPayables
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - client_id
+                - repayment_method
+                - instalment_count
+                - currency
+              properties:
+                client_id:
+                  type: string
+                  description: The unique identifier for the client provided by Bankable.
+                  example: e4fc84a1-ed7f-48a3-a77c-db323af93c92
+                repayment_method:
+                  type: string
+                  description: Whether a Client has chosen to repay the financing in weekly or monthly instalments.
+                  enum:
+                    - weekly_instalments
+                    - monthly_instalments
+                  example: weekly_instalments
+                instalment_count:
+                  type: integer
+                  description: The requested number of instalments. The maximum values are 51 for weekly and 11 for monthly instalments.
+                  example: 5
+                currency:
+                  type: string
+                  description: The currency must be either EUR or GBP. All the payables within a request must use the same currency.
+                  enum:
+                    - EUR
+                    - GBP
+                  example: EUR
+                payment_date:
+                  type: string
+                  format: date
+                  description: The desired day that the payables should be paid if financed successfully. If not provided, the payables will be paid in the next possible time after financing. The payment date should be in format YYYY-MM-DD, for example, 2024-01-01, and cannot be in the past.
+                  example: '2025-01-30'
+                payable:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - amount
+                      - issue_date
+                      - due_date
+                      - invoice_payable_number
+                      - payment_reference
+                      - invoice_payable_pdf
+                      - issuer_country_code
+                      - issuer_registration_number
+                    properties:
+                      amount:
+                        type: number
+                        format: float
+                        description: The payable amount in EUR or GBP.
+                        example: 400
+                      issue_date:
+                        type: string
+                        format: date
+                        description: The issue date of the invoice payable with YYYY-MM-DD format.
+                        example: '2025-01-30'
+                      due_date:
+                        type: string
+                        format: date
+                        description: The due date of the invoice payable with YYYY-MM-DD format.
+                        example: '2025-01-30'
+                      invoice_payable_number:
+                        type: string
+                        description: The invoice payable number as shown on the invoice.
+                        example: C10024
+                      payment_reference:
+                        type: string
+                        description: A payment reference or message for Bankable to use in the payment reference or message field when paying the invoice payable to the issuer/supplier.
+                        example: C100242024
+                      invoice_payable_pdf:
+                        type: string
+                        format: binary
+                        description: The invoice payable as a PDF file.
+                        example: .pdf
+                      issuer_country_code:
+                        type: string
+                        description: The invoice payable issuer's/supplier’s two-letter country code in ISO 3166-2 alpha2 format..
+                        example: GB
+                      issuer_registration_number:
+                        type: string
+                        description: The issuer's Company Registration Number.
+                        example: 1234567-8
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Payable financing request ID provided by Bankable.
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  created_at:
+                    type: string
+                    description: Timestamp of the payables financing request creation in RFC3339 format.
+                  state:
+                    type: string
+                    description: Current state of the payable financing request.
+                    example: SUBMITTED
+                  total_requested_amount:
+                    type: number
+                    format: float
+                    description: The total amount of the payable financing request.
+                    example: 600
+                  currency:
+                    type: string
+                    description: The currency can be either EUR or GBP.
+                    enum:
+                      - EUR
+                      - GBP
+                    example: EUR
+                  invoice_payable_count:
+                    type: integer
+                    description: The total number of payables part of the financing request.
+                    example: 3
+                  instalments_count:
+                    type: number
+                    description: The total number of instalments that will be required to repay the credit.
+                    example: 3
+                  total_repayment_amount:
+                    type: number
+                    format: float
+                    description: The total amount that the client will need to pay back, including total_fees_amount.
+                    example: 645.99
+                  total_fees_amount:
+                    type: number
+                    format: float
+                    description: The total amount of interest and fees that will be charged for the credit.
+                    example: 45.98
+                  instalments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: The UUID of the instalment.
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        number:
+                          type: integer
+                          description: The number of the instalment within the total number of instalments. The maximum values are 51 for weekly and 11 for monthly instalments.
+                          example: 1
+                        created_at:
+                          type: string
+                          description: Creation timestamp in ISO-8601 format.
+                        state:
+                          type: string
+                          description: Current state of the instalment.
+                          example: SUBMITTED
+                        monthly_total_payable_amount:
+                          type: number
+                          format: float
+                          description: The total amount that the client will need to pay back each month, including monthly_total_fees_amount.
+                          example: 215.33
+                        monthly_principal_amount:
+                          type: number
+                          format: float
+                          description: The total principal amount to be paid monthly.
+                          example: 190
+                        monthly_total_fees_amount:
+                          type: number
+                          format: float
+                          description: The total fees to be paid monthly.
+                          example: 25.33
+                        monthly_remaining_balance:
+                          type: number
+                          format: float
+                          description: The remaining balance on the credit after a given instalment has been paid. It is calculated by subtracting the monthly_principal_amount and the monthly_total_fees_amount from the previous installment's remaining_balance.
+                          example: 430.66
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid parameters.
+                details: The client's id is missing.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+    get:
+      tags:
+        - Payables Finance
+      summary: List Payables
+      description: This endpoint allows retrieving a paginated list of payable financing requests, applying filters and sorting options.
+      operationId: findPayables
+      parameters:
+        - name: limit
+          schema:
+            type: string
+          in: query
+          description: The number of items to obtain per response. The limit/offset schema is used for pagination. The default value is 10. The maximum allowed value is 100.
+          example: 10
+        - name: offset
+          schema:
+            type: string
+          in: query
+          description: The number of items to skip in the response. The limit/offset schema is used for pagination. The default value is 0.
+          example: 20
+        - name: sort_by
+          schema:
+            type: string
+            enum:
+              - created_at
+              - state
+              - amount
+              - currency
+          in: query
+          description: Use to determine which value to use to sort the paginated result. The default value is created_at.
+          example: created_at
+        - name: descending
+          schema:
+            type: string
+            enum:
+              - 'true'
+              - 'false'
+          in: query
+          description: Use to determine the sorting order as either descending or ascending. The default value is false, which corresponds to ascending order.
+          example: true
+        - name: id[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the payable list by a collection of payable financing request IDs. You must use this filter by adding multiple times this query parameter with different values.
+          example: a8168c04-9ee0-4d3a-88b3-2ba644ffce43&id[]=3786dbc1-953e-4c35-9e37-f60e00717d7b
+        - name: state[]
+          in: query
+          description: Use to filter the payable request list by a collection of payable financing request states. You must use this filter by adding multiple times this query parameter with different values.
+          schema:
+            type: string
+            example: APPROVED&state[]=REJECTED
+        - name: client_id[]
+          in: query
+          description: Use to filter the payable request list by a collection of client IDs. You must use this filter by adding multiple times this query parameter with different values. The format is ISO 4217.
+          schema:
+            type: string
+            example: 9d4153a3-f708-4e47-967e-bebd619a76a4&client_id[]=db9beb15-ec04-4ff5-9f3f-0f00fd03a9d3
+        - name: total_requested_amount_from
+          in: query
+          description: Use to filter the payable request list by amount value greater than the given one. The amount can only include numbers and dot (.), and it must be presented in (EUR) or pence (GBP). For example, 100.00.
+          schema:
+            type: string
+            example: '100.00'
+        - name: total_requested_amount_to
+          in: query
+          description: Use to filter the payable request list by amount value less than the given one. The amount can only include numbers and dot (.), and it must be presented in (EUR) or pence (GBP). For example, 200.00.
+          schema:
+            type: string
+            example: '200.00'
+        - name: currency[]
+          schema:
+            type: string
+          in: query
+          description: Use to filter the payable request list by a collection of currencies. You must use this filter by adding multiple times this query parameter with different values. The format is ISO 4217.
+          example: EUR&currency[]=GBP
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    description: List of paginated payable financing requests.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Payable request ID provided by Bankable.
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        created_at:
+                          type: string
+                          description: Timestamp of the payable request creation in RFC3339 format.
+                        updated_at:
+                          type: string
+                          description: Timestamp of the last update in RFC3339 format.
+                        state:
+                          type: string
+                          description: Current status of the payable request.
+                          enum:
+                            - SUBMITTED
+                            - PRE-APPROVED
+                            - CANCELLED
+                            - APPROVED
+                            - REJECTED
+                            - FINANCED
+                            - OVERDUE
+                            - DELINQUENT
+                            - DEFAULTED
+                            - WRITTEN_OFF
+                        reject_reason:
+                          type: string
+                          description: The rejection reason for the payable request.
+                          enum:
+                            - LIMIT_EXCEEDED
+                            - INVALID_PAYABLES
+                            - RISK_ASSESSMENT
+                            - COMPANY_STATUS_CHANGED
+                            - OTHER
+                        decline_reason:
+                          type: string
+                          description: The decline reason provided by the client.
+                          example: Not happy with the pricing
+                        total_requested_amount:
+                          type: number
+                          format: float
+                          description: The total amount of the payable financing request.
+                          example: 600
+                        currency:
+                          type: string
+                          description: The currency can be either EUR or GBP.
+                          enum:
+                            - EUR
+                            - GBP
+                        invoice_payable_count:
+                          type: integer
+                          description: The total number of payables part of the financing request.
+                          example: 3
+                        instalments_count:
+                          type: number
+                          description: The total number of instalments that will be required to repay the credit. The maximum values are 51 for weekly and 11 for monthly instalments.
+                          example: 3
+                        repayment_method:
+                          type: string
+                          description: If the repayment plan is in weekly or monthly instalments.
+                          enum:
+                            - weekly_instalments
+                            - monthly_instalments
+                        annual_interest_rate:
+                          type: number
+                          format: float
+                          description: The annual interest rate applied to the outstanding loan principal as a periodic interest rate calculated monthly or weekly based on the selected repayment method.
+                          example: 0.0975
+                        fees_rate:
+                          type: number
+                          format: float
+                          description: The fees percentage that is applied to the total financing amount and charged once as part of the first repayment instalment.
+                          example: 0.025
+                        total_repayment_amount:
+                          type: number
+                          format: float
+                          description: The total amount that the client will need to pay back, including total_fees_amount.
+                          example: 645.99
+                        total_interest_amount:
+                          type: number
+                          format: float
+                          description: The total amount of interest that will be charged for the financing.
+                          example: 45.98
+                        total_fees_amount:
+                          type: number
+                          format: float
+                          description: The total amount of fees that will be charged for the financing.
+                          example: 45.98
+                  pagination:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                        description: The number of items per response. The limit/offset schema is used for pagination.
+                        example: 20
+                      offset:
+                        type: integer
+                        description: The number of items to skip in the response. The limit/offset schema is used for pagination.
+                        example: 10
+                      total_items:
+                        type: integer
+                        description: The total number of items available in the dataset, which can be larger than the number of items included in the response.
+                        example: 2033
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Sorting is not allowed by the field 'updated_at'.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /payables/{id}:
+    get:
+      tags:
+        - Payables Finance
+      summary: Get Payable Details
+      description: Use this endpoint to retrieve the status, details, and repayment plan of a payable financing request.
+      operationId: getPayableDetails
+      parameters:
+        - name: id
+          schema:
+            type: string
+            format: uuid
+          in: path
+          description: This is the ID provided by Bankable when the payable was created (see the "Submit Payables" response).
+          example: 550e8400-e29b-41d4-a716-446655440000
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Payable request ID provided by Bankable.
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  created_at:
+                    type: string
+                    description: Timestamp of the payable request creation in RFC3339 format.
+                  updated_at:
+                    type: string
+                    description: Timestamp of the last update in RFC3339 format.
+                  state:
+                    type: string
+                    description: Current status of the payable request.
+                    enum:
+                      - SUBMITTED
+                      - PRE-APPROVED
+                      - CANCELLED
+                      - APPROVED
+                      - REJECTED
+                      - FINANCED
+                      - OVERDUE
+                      - DELINQUENT
+                      - DEFAULTED
+                      - WRITTEN_OFF
+                  reject_reason:
+                    type: string
+                    description: The rejection reason for the payable request.
+                    enum:
+                      - LIMIT_EXCEEDED
+                      - INVALID_PAYABLES
+                      - RISK_ASSESSMENT
+                      - COMPANY_STATUS_CHANGED
+                      - OTHER
+                  decline_reason:
+                    type: string
+                    description: The decline reason provided by the client.
+                    example: Not happy with the pricing
+                  total_requested_amount:
+                    type: number
+                    format: float
+                    description: The total amount of the payable financing request.
+                    example: 600
+                  currency:
+                    type: string
+                    description: The currency can be either EUR or GBP.
+                    enum:
+                      - EUR
+                      - GBP
+                  invoice_payable_count:
+                    type: integer
+                    description: The total number of payables part of the financing request.
+                    example: 3
+                  instalments_count:
+                    type: number
+                    description: The total number of instalments that will be required to repay the credit. The maximum values are 51 for weekly and 11 for monthly instalments.
+                    example: 3
+                  repayment_method:
+                    type: string
+                    description: If the repayment plan is in weekly or monthly instalments.
+                    enum:
+                      - weekly_instalments
+                      - monthly_instalments
+                  annual_interest_rate:
+                    type: number
+                    format: float
+                    description: The annual interest rate applied to the outstanding loan principal as a periodic interest rate calculated monthly or weekly based on the selected repayment method.
+                    example: 0.0975
+                  fees_rate:
+                    type: number
+                    format: float
+                    description: The fees percentage that is applied to the total financing amount and charged once as part of the first repayment instalment.
+                    example: 0.025
+                  total_repayment_amount:
+                    type: number
+                    format: float
+                    description: The total amount that the client will need to pay back, including total_fees_amount.
+                    example: 645.99
+                  total_interest_amount:
+                    type: number
+                    format: float
+                    description: The total amount of interest that will be charged for the financing.
+                    example: 45.98
+                  total_fees_amount:
+                    type: number
+                    format: float
+                    description: The total amount of fees that will be charged for the financing.
+                    example: 45.98
+                  instalments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: The UUID of the instalment.
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        number:
+                          type: integer
+                          description: The number of the instalment within the total number of instalments. The maximum values are 51 for weekly and 11 for monthly instalments.
+                          example: 1
+                        created_at:
+                          type: string
+                          description: Creation timestamp in ISO-8601 format.
+                        updated_at:
+                          type: string
+                          description: Timestamp of the last update in ISO-8601 format.
+                        state:
+                          type: string
+                          description: Current state of the instalment.
+                          enum:
+                            - SUBMITTED
+                            - OUTSTANDING
+                            - OVERDUE
+                            - PRE_SETTLED
+                            - SETTLED
+                            - CANCELLED
+                        due_date:
+                          type: string
+                          format: date
+                          description: The date limit when this instalment should be paid. This information is not available until the payable request has been financed. Empty until the ETP is traded.
+                          example: '2025-01-30'
+                        maturity_date:
+                          type: string
+                          format: date
+                          description: The next business date after the due date taking into account weekends and public holidays. This information is not available until the payable request has been financed. Empty until the ETP is traded.
+                          example: '2025-01-30'
+                        repayment_amount:
+                          type: number
+                          format: float
+                          description: The total amount that the client will need to pay back each instalment, including total_fees_amount.
+                          example: 215.33
+                        principal_amount:
+                          type: number
+                          format: float
+                          description: The total principal amount to be paid in the instalment.
+                          example: 190
+                        interest_amount:
+                          type: number
+                          format: float
+                          description: The total interest to be paid in the instalment.
+                          example: 25.33
+                        total_fees_amount:
+                          type: number
+                          format: float
+                          description: The total fees to be paid in the repayment.
+                          example: 25.33
+                        remaining_balance:
+                          type: number
+                          format: float
+                          description: The remaining balance on the credit after a given instalment has been paid. It is calculated by subtracting the `principal_amount` and the `total_fees_amount` from the previous installment's `remaining_balance`.
+                          example: 430.66
+                        settled_amount:
+                          type: number
+                          format: float
+                          description: The amount that Bankable has received and approved for settlement of the instalment. This information is not available until a repayment has been confirmed for the instalment. Empty until funds are settled.
+                          example: 400
+                        invoice_url:
+                          type: string
+                          description: URL to the Invoice PDF generated for this instalment valid for 24 hours. Only expected when invoice_state is `PROCESSED`. This information is not available until the payable request has been financed. Empty until the ETP is traded.
+                        invoice_state:
+                          type: string
+                          description: State of the generation for the invoice PDF. This information is not available until the payable request has been financed. Empty until the ETP is traded.
+                          enum:
+                            - PROCESSED
+                            - PENDING
+                            - ERROR
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: Invalid Payable financing request ID.
+        '403':
+          description: Unauthorized
+          $ref: '#/components/responses/Unauthorized'
+          content:
+            application/json:
+              example:
+                code: 403
+                message: You have no access to the given Payable financing request.
+        '404':
+          description: Not Found
+          $ref: '#/components/responses/NotFound'
+          content:
+            application/json:
+              example:
+                code: 404
+                message: The payable cannot be found.
+        '500':
+          description: Internal error
+          $ref: '#/components/responses/Internal'
+  /payables/{id}/approve:
+    put:
+      tags:
+        - Payables Finance
+      summary: Approve Repayment Plan
+      description: This endpoint allows the approval of the repayment plan for submitted payables.
+      operationId: approveRepaymentPlan
+      parameters:
+        - name: id
+          in: path
+          description: This is the Payable financing request ID provided by Bankable when the Payables were submitted
+          schema:
+            type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid parameters
+                details: The client's id is missing.
+        '500':
+          description: Internal Error
+          $ref: '#/components/responses/Internal'
+  /payables/{id}/decline:
+    put:
+      tags:
+        - Payables Finance
+      summary: Decline Repayment Plan
+      description: This endpoint allows declining the repayment plan for submitted payables.
+      operationId: declineRepaymentPlan
+      parameters:
+        - name: id
+          in: path
+          description: This is the Payable financing request ID provided by Bankable when the Payables were submitted
+          schema:
+            type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          required: true
+        - name: decline_reason
+          in: query
+          description: The reason for declining the financing request
+          schema:
+            type: string
+          example: Free input.
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json: {}
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                properties:
+                  code:
+                    enum:
+                      - 400
+                $ref: '#/components/schemas/BaseError'
+              example:
+                code: 400
+                message: invalid parameters
+                details: The client's id is missing.
+        '500':
+          description: Internal Error
+          $ref: '#/components/responses/Internal'
+components:
+  securitySchemes:
+    ClientCredentials:
+      description: |
+        Intended for the server-to-server authentication, this flow describes an approach when the client application acts on its own behalf rather than on behalf of any individual user. In most scenarios, this flow provides the means to allow users to specify their credentials in the client application, so it can access the resources under the client's control.
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://api.bnkbl.io/oauth/token
+          scopes: {}
+  schemas:
+    BaseError:
+      type: object
+      additionalProperties: false
+      description: The Problem Details JSON Object [[RFC7807](https://tools.ietf.org/html/rfc7807)].
+      properties:
+        code:
+          type: integer
+          description: The HTTP status code.
+        message:
+          type: string
+          description: A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence of the problem, except for purposes of localization.
+        details:
+          type: string
+          description: A human-readable explanation specific to this occurrence of the problem.
+    Unauthorized:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - title: Unauthorized
+        - type: object
+          properties:
+            code:
+              type: integer
+              description: The HTTP status code.
+              enum:
+                - 401
+    crn:
+      type: object
+      properties:
+        registration_number:
+          type: string
+          description: Company registration number.
+          example: '09979111'
+        country_code:
+          type: string
+          description: ISO Country Code (two letter country code from ISO 3166).
+          example: GB
+          maxLength: 2
+          minLength: 2
+      required:
+        - registration_number
+        - country_code
+    products:
+      description: Product identifier.
+      type: string
+      enum:
+        - credit-line
+        - payables
+        - receivables
+        - revolving-credit
+    contact:
+      type: object
+      properties:
+        first_name:
+          description: Client first name.
+          type: string
+          example: John
+        last_name:
+          description: Client last name.
+          type: string
+          example: Doe
+        email:
+          description: Client email address.
+          type: string
+          format: email
+          example: test@domain.com
+        phone_country_dial:
+          description: Phone number prefix for the Client number.
+          type: string
+          maxLength: 2
+          minLength: 2
+          example: '34'
+        phone_number:
+          description: Client phone number.
+          type: string
+          example: '632454331'
+      required:
+        - first_name
+        - last_name
+        - email
+        - phone_country_dial
+        - phone_number
+    BadRequest:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - title: Bad Request
+        - type: object
+          properties:
+            code:
+              type: integer
+              description: The HTTP status code.
+              enum:
+                - 400
+    NotFound:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - title: Not Found
+        - type: object
+          properties:
+            code:
+              type: integer
+              description: The HTTP status code.
+              enum:
+                - 404
+    Conflict:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - title: Conflict
+        - type: object
+          properties:
+            code:
+              type: integer
+              description: The HTTP status code.
+              enum:
+                - 409
+    Internal:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - title: Internal
+        - type: object
+          properties:
+            code:
+              type: integer
+              description: The HTTP status code.
+              enum:
+                - 500
+    IBAN:
+      type: object
+      properties:
+        iban:
+          type: string
+          description: Standard International Bank Account Number.
+          example: FI1410093000123458
+        bic:
+          type: string
+          description: The Bank Identifier Code or SWIFT Code, made up of 8 or 11 characters.
+          example: BOHIUS77
+      required:
+        - iban
+        - bic
+    SCAN:
+      type: object
+      properties:
+        sort_code:
+          type: string
+          description: The 6 digit sort code that identifies the Client bank.
+          example: 123456
+        account_number:
+          type: string
+          description: Client bank account number.
+          example: 12345678
+      required:
+        - sort_code
+        - account_number
+    bankAccount:
+      type: object
+      oneOf:
+        - $ref: '#/components/schemas/IBAN'
+        - $ref: '#/components/schemas/SCAN'
+    companyDetails:
+      type: object
+      properties:
+        company_name:
+          description: Full company name.
+          type: string
+          example: Issuer Company Name
+        registration_number:
+          description: Company registration number.
+          type: string
+          example: '12345678'
+        country_code:
+          description: ISO Country code (two letter country code from ISO 3166).
+          type: string
+          example: FI
+        currency:
+          description: Currency which the company operates.
+          type: string
+          enum:
+            - EUR
+            - GBP
+          example: GBP
+        industry:
+          description: Industry SIC code.
+          type: string
+          example: '62020'
+        company_type:
+          description: |
+            Company type
+            LTD: Limited Company.
+            UNLTD: Unlimited Company.
+            LLP: Limited Liability Partnership.
+            SOLE: Sole Trader.
+          type: string
+          enum:
+            - LTD
+            - UNLTD
+            - LLP
+            - SOLE
+          example: UNLTD
+      required:
+        - company_name
+        - registration_number
+        - country_code
+        - currency
+    financialDetails:
+      type: object
+      properties:
+        period_month:
+          description: Period month with format YYYY-MM, for example, 2022-12
+          type: string
+          format: date
+          example: 2022-01
+        revenue:
+          description: Monthly revenue.
+          type: number
+          format: float
+          example: 100.25
+        costs:
+          description: Monthly costs total.
+          type: number
+          format: float
+          example: 100.25
+        gross_profit:
+          description: Monthly gross profit.
+          type: number
+          format: float
+          example: 100.25
+        expenses:
+          description: Monthly expenses.
+          type: number
+          format: float
+          example: 100.25
+        ebitda:
+          description: Monthly earnings before interest, tax, depreciation and amortisation.
+          type: number
+          format: float
+          example: 100.25
+        depreciation:
+          description: Monthly depreciation.
+          type: number
+          format: float
+          example: 100.25
+        amortisation:
+          description: Monthly amortisation.
+          type: number
+          format: float
+          example: 100.25
+        ebit:
+          description: Monthly earnings before interest and tax.
+          type: number
+          format: float
+          example: 100.25
+        taxes:
+          description: Monthly taxes.
+          type: number
+          format: float
+          example: 100.25
+        interests:
+          description: Can be shares or similar.
+          type: number
+          format: float
+          example: 100.25
+        profit_loss:
+          description: Monthly profit and loss.
+          type: number
+          format: float
+          example: 100.25
+        assets:
+          description: Monthly assets.
+          type: number
+          format: float
+          example: 100.25
+        current_assets:
+          description: Short term assets.
+          type: number
+          format: float
+          example: 100.25
+        liabilities:
+          description: Liabilities.
+          type: number
+          format: float
+          example: 100.25
+        current_liabilities:
+          description: Short term liabilities.
+          type: number
+          format: float
+          example: 100.25
+        shareholder_equity:
+          description: Share holder equity.
+          type: number
+          format: float
+          example: 100.25
+      required:
+        - period_month
+        - revenue
+        - gross_profit
+        - expenses
+        - ebitda
+        - ebit
+        - taxes
+        - profit_loss
+        - assets
+        - current_assets
+        - liabilities
+        - current_liabilities
+    accountPayable:
+      type: object
+      properties:
+        invoice_id:
+          description: Unique identifier for the invoice.
+          type: string
+          example: invoice_90025
+        due_date:
+          description: The agreed date of when the company needs to pay the creditor in format YYYY-MM-DD, for example, 2022-01-01.
+          type: string
+          format: date
+          example: '2022-12-01'
+        settled_date:
+          description: The actual date the payment was made in format YYYY-MM-DD, for example, 2022-01-01.
+          type: string
+          format: date
+          example: '2022-12-01'
+        creditor_id:
+          description: Any information that could identify unique creditors per transaction.
+          type: string
+          example: 196af880-ab2b-4418-af40-95bb7ed78977
+        face_value:
+          description: The value of the transaction.
+          type: number
+          format: float
+          example: 900.25
+      required:
+        - invoice_id
+        - due_date
+        - settled_date
+        - creditor_id
+        - face_value
+    accountReceivable:
+      type: object
+      properties:
+        invoice_id:
+          description: Unique identifier for the invoice.
+          type: string
+          example: invoice_90025
+        due_date:
+          description: The agreed date of when the company needs to pay the creditor in format YYYY-MM-DD, for example, 2022-01-01.
+          type: string
+          format: date
+          example: '2022-12-01'
+        settled_date:
+          description: The actual date the payment was made in format YYYY-MM-DD, for example, 2022-01-01.
+          type: string
+          format: date
+          example: '2022-12-01'
+        debtor_id:
+          description: Any information that could identify unique debtors per transaction.
+          type: string
+          example: 196af880-ab2b-4418-af40-95bb7ed78977
+        face_value:
+          description: The value of the transaction.
+          type: number
+          format: float
+          example: 900.25
+      required:
+        - invoice_id
+        - due_date
+        - settled_date
+        - debtor_id
+        - face_value
+  responses:
+    Unauthorized:
+      description: Unauthorized access, invalid credentials were used.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Unauthorized'
+    BadRequest:
+      description: Bad request, invalid request payload.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BadRequest'
+    NotFound:
+      description: Resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotFound'
+    Conflict:
+      description: Conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Conflict'
+    Internal:
+      description: Internal Error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Internal'
+          example:
+            code: 500
+            message: An internal error has occurred.
+    signersList:
+      description: Signers list.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              signers:
+                type: array
+                minItems: 1
+                maxItems: 3
+                description: List of signing parties.
+                items:
+                  type: object
+                  properties:
+                    first_name:
+                      description: Signer first name.
+                      type: string
+                      example: John
+                    last_name:
+                      description: Signer last name.
+                      type: string
+                      example: Doe
+                    email:
+                      description: Signer email.
+                      type: string
+                      example: john.doe@bnkbl.com
+                    signing_url:
+                      description: URL to the contract to sign.
+                      type: string
+                      example: https://docs.bnkbl.com/signing/1h348fn367adesn
+                    signed:
+                      description: Whether the signer signed the contract or not.
+                      type: boolean
+                      example: true
+                    signed_at:
+                      description: The date when the signer signed the contract.
+                      type: string
+                      format: date-time
+                      example: '2024-02-21T15:44:12Z'
+x-readme:
+  explorer-enabled: false
+  proxy-enabled: false
